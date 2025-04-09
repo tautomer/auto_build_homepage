@@ -51,12 +51,12 @@ jobs:
     if: needs.Check-homepage-release.outputs.is_new_release == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - name: Sync with upstream loeeeee/homepage-in-lxc
+      - name: Download latest homepage release
         run: |
           curl -s https://api.github.com/repos/gethomepage/homepage/releases/latest \
           | jq -r '.tarball_url' \
-          | xargs curl -L -o homepage-latest.tar.gz
-          tar -xzf homepage-latest.tar.gz --one-top-level --strip-components=1 -C homepage 2>/dev/null
+          | xargs curl -L -o homepage.tar.gz
+          tar -xzf homepage.tar.gz --one-top-level --strip-components=1 -C .
 
       # this is global install which works for all users
       - name: Set up Node.js
@@ -73,10 +73,11 @@ jobs:
           ln -s ../config config
           pnpm install
           pnpm build
+          echo "timestamp=$(date)" >> $GITHUB_OUTPUT
 
       - name: Archive app folder
         run: |
-          tar -czf homepage.tar.gz -C ~/homepage 
+          tar -czf homepage.tar.gz ${{ github.workspace }}/homepage 
 
       - name: Upload app as artifact
         uses: actions/upload-artifact@v4
@@ -109,5 +110,5 @@ jobs:
             This release was created automatically by GitHub Actions. You can track the build process here: [GitHub Actions Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).
           draft: false
           prerelease: false
-          artifacts: app-release/server.tar.gz
+          artifacts: app-release/homepage.tar.gz
           token: ${{ secrets.GITHUB_TOKEN }}
