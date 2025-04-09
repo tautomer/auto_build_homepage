@@ -1,0 +1,113 @@
+name: Build homepage on new release
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'  # Runs daily at midnight UTC (supposedly)
+  workflow_dispatch:
+
+jobs:
+  Check-homepage-release:
+    runs-on: ubuntu-latest
+    outputs:
+      latest_release: ${{ steps.check.outputs.latest_release }}
+      is_new_release: ${{ steps.check.outputs.is_new_release }}
+    steps:
+      - name: Restore previous release tag
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: .latest_homepage_release
+          key: homepage-latest-release-
+
+      - name: Get latest homepage release
+        id: check
+        run: |
+          LATEST_TAG=$(curl -s https://api.github.com/repos/gethomepage/homepage/releases/latest | jq -r '.tag_name')
+          PREV_TAG=$(cat .latest_homepage_release 2>/dev/null || echo "")
+          echo "latest_release=$LATEST_TAG" >> $GITHUB_ENV
+          echo "latest_release=$LATEST_TAG" >> $GITHUB_OUTPUT
+          echo "Latest tag" $LATEST_TAG
+          echo "Previous tag" $PREV_TAG
+          if [ "$LATEST_TAG" != "$PREV_TAG" ]; then
+            echo "is_new_release=true" >> $GITHUB_ENV
+            echo "is_new_release=true" >> $GITHUB_OUTPUT
+            echo "$LATEST_TAG" > .latest_homepage_release
+          else
+            echo "is_new_release=false" >> $GITHUB_ENV
+            echo "is_new_release=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Save latest release tag
+        if: steps.check.outputs.is_new_release == 'true'
+        uses: actions/cache@v4
+        with:
+          path: .latest_homepage_release
+          key: homepage-latest-release-${{ steps.check.outputs.latest_release }}
+
+  Build-homepage:
+    needs: Check-homepage-release
+    outputs:
+      timestamp: ${{ steps.build.outputs.timestamp }}
+    if: needs.Check-homepage-release.outputs.is_new_release == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync with upstream loeeeee/homepage-in-lxc
+        run: |
+          curl -s https://api.github.com/repos/gethomepage/homepage/releases/latest \
+          | jq -r '.tarball_url' \
+          | xargs curl -L -o homepage-latest.tar.gz
+          tar -xzf homepage-latest.tar.gz --one-top-level --strip-components=1 -C homepage 2>/dev/null
+
+      # this is global install which works for all users
+      - name: Set up Node.js
+        uses: actions/setup-node@v4.3.0
+        with:
+          node-version: '22'
+      
+      - name: Build homepage server
+        id: build
+        run: |
+          npm install -g pnpm
+          mkdir config
+          cd homepage
+          ln -s ../config config
+          pnpm install
+          pnpm build
+
+      - name: Archive app folder
+        run: |
+          tar -czf homepage.tar.gz -C ~/homepage 
+
+      - name: Upload app as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: homepage-app-${{ needs.Check-homepage-release.outputs.latest_release }}
+          path: homepage.tar.gz
+
+  Release-homepage-build:
+    needs: [Build-homepage, Check-homepage-release]
+    if: needs.Check-homepage-release.outputs.is_new_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: homepage-app-${{ needs.Check-homepage-release.outputs.latest_release }}
+          path: app-release
+
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ needs.Check-homepage-release.outputs.latest_release }}
+          name: homepage server ${{ needs.Check-homepage-release.outputs.latest_release }} 
+          body: |
+            This release contains the latest build of homepage server:
+            - Version: **${{ needs.Check-homepage-release.outputs.latest_release }}**
+            - Built on: **${{ needs.Build-homepage.outputs.timestamp }}**
+
+            **Release details**:  
+            This release was created automatically by GitHub Actions. You can track the build process here: [GitHub Actions Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).
+          draft: false
+          prerelease: false
+          artifacts: app-release/server.tar.gz
+          token: ${{ secrets.GITHUB_TOKEN }}
