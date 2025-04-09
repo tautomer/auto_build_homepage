@@ -43,11 +43,10 @@ jobs:
         with:
           path: .latest_homepage_release
           key: homepage-latest-release-${{ steps.check.outputs.latest_release }}
-
   Build-homepage:
     needs: Check-homepage-release
     outputs:
-      timestamp: ${{ steps.build.outputs.timestamp }}
+      timestamp: ${{ steps.timestamp.outputs.timestamp }}
     if: needs.Check-homepage-release.outputs.is_new_release == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
@@ -56,30 +55,51 @@ jobs:
           curl -s https://api.github.com/repos/gethomepage/homepage/releases/latest \
           | jq -r '.tarball_url' \
           | xargs curl -L -o homepage.tar.gz
-          tar -xzf homepage.tar.gz --one-top-level --strip-components=1 -C .
 
-      # this is global install which works for all users
-      - name: Set up Node.js
-        uses: actions/setup-node@v4.3.0
-        with:
-          node-version: '22'
-      
-      - name: Build homepage server
-        id: build
+      - name: Extract homepage release
         run: |
-          npm install -g pnpm
+          tar --no-same-owner -xzf homepage.tar.gz --one-top-level --strip-components=1 -C .
+      
+      - name: Create Dockerfile.alpine
+        run: |
+          cat <<EOF > ${{ github.workspace }}/Dockerfile.alpine
+          # Start with the Alpine image
+          FROM node:22-alpine
+
+          # Install dependencies and build the app
+          WORKDIR /app
+          COPY . /app
+          RUN npm install -g pnpm
+          RUN pnpm install
+          RUN pnpm build
+
+          EOF
+
+      - name: Build in Alpine Docker container
+        run: |
+          # Build the Docker image with the extracted source code
+          docker build -t homepage-builder -f Dockerfile.alpine ${{ github.workspace }}/homepage
+          docker create --name homepage-app homepage-builder
+          rm -rf ${{ github.workspace }}/homepage
+          docker cp homepage-app:/app ${{ github.workspace }}/homepage
+          docker rm homepage-app
+        working-directory: ${{ github.workspace }}
+
+      - name: Set up config symlink
+        run: |
           mkdir config
           cd homepage
           ln -s ../config config
-          pnpm install
-          pnpm build
-          echo "timestamp=$(date)" >> $GITHUB_OUTPUT
 
-      - name: Archive app folder
+      - name: Timestamp
+        id: timestamp
+        run: echo "timestamp=$(date)" >> $GITHUB_OUTPUT
+
+      - name: Archive homepage folder
         run: |
-          tar -czf homepage.tar.gz ${{ github.workspace }}/homepage 
+          tar -czf homepage.tar.gz homepage
 
-      - name: Upload app as artifact
+      - name: Upload homepage as artifact
         uses: actions/upload-artifact@v4
         with:
           name: homepage-app-${{ needs.Check-homepage-release.outputs.latest_release }}
@@ -105,6 +125,10 @@ jobs:
             This release contains the latest build of homepage server:
             - Version: **${{ needs.Check-homepage-release.outputs.latest_release }}**
             - Built on: **${{ needs.Build-homepage.outputs.timestamp }}**
+            - Built for: Alpine Linux
+
+            **How to install**: 
+            - Extract the server with `tar -xf homepage.tar.gz --no-same-owner`.
 
             **Release details**:  
             This release was created automatically by GitHub Actions. You can track the build process here: [GitHub Actions Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).
