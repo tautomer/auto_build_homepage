@@ -89,6 +89,7 @@ jobs:
         run: |
           mkdir config
           cd homepage
+          rm -r config
           ln -s ../config config
 
       - name: Timestamp
