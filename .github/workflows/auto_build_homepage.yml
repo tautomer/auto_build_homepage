@@ -2,7 +2,7 @@ name: Build homepage on new release
 
 on:
   schedule:
-    - cron: '0 0 * * 0'  # Runs daily at midnight UTC (supposedly)
+    - cron: '0 0 * * 0' # Runs daily at midnight UTC (supposedly)
   workflow_dispatch:
 
 jobs:
@@ -15,40 +15,36 @@ jobs:
       - name: Get latest homepage release
         id: check
         run: |
-          # Get the latest release tag
           LATEST_TAG=$(curl -s https://api.github.com/repos/gethomepage/homepage/releases/latest | jq -r '.tag_name')
           echo "latest_release=$LATEST_TAG" >> $GITHUB_ENV
           echo "latest_release=$LATEST_TAG" >> $GITHUB_OUTPUT
 
-      - uses: actions/cache@v4
-        id: cache
-        with:
-          path: .latest_homepage_release
-          key: homepage-latest-release-${{ steps.check.outputs.latest_release }}  
-          restore-keys: |
-            homepage-latest-release-
-
-      - name: Compare latest release with cached one
+      - name: Compare latest release with stored one
         id: compare
+        env:
+          STORED_RELEASE_VAR: ${{ vars.LATEST_HOMEPAGE_RELEASE }} # Access the variable
         run: |
-          # Get the latest release tag from the first step
           LATEST_TAG=${{ steps.check.outputs.latest_release }}
-
-          # Read the previous release tag from the cache, fallback to empty if not found
-          PREV_TAG=$(cat .latest_homepage_release 2>/dev/null || echo "")
+          PREV_TAG="${{ env.STORED_RELEASE_VAR }}" # Use the variable value
 
           echo "Latest tag: $LATEST_TAG"
-          echo "Previous tag: $PREV_TAG"
+          echo "Previous tag (from variable): $PREV_TAG"
 
           if [ "$LATEST_TAG" != "$PREV_TAG" ]; then
             echo "is_new_release=true" >> $GITHUB_ENV
             echo "is_new_release=true" >> $GITHUB_OUTPUT
-            echo "$LATEST_TAG" > .latest_homepage_release  # Save the new tag if it's a new release
+            # Update the repository variable
+            echo "::notice file=README.md::New release detected: $LATEST_TAG. Updating repository variable."
+            curl -X PATCH \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ github.repository_owner }}/${{ github.repository }}/variables/LATEST_HOMEPAGE_RELEASE \
+            -d '{"value":"'$LATEST_TAG'"}'
           else
             echo "is_new_release=false" >> $GITHUB_ENV
             echo "is_new_release=false" >> $GITHUB_OUTPUT
           fi
-
+          
   Build-homepage:
     needs: Check-homepage-release
     outputs:
@@ -65,7 +61,7 @@ jobs:
       - name: Extract homepage release
         run: |
           tar --no-same-owner -xzf homepage.tar.gz --one-top-level --strip-components=1 -C .
-      
+        
       - name: Create Dockerfile.alpine
         run: |
           cat <<EOF > ${{ github.workspace }}/Dockerfile.alpine
@@ -83,7 +79,6 @@ jobs:
 
       - name: Build in Alpine Docker container
         run: |
-          # Build the Docker image with the extracted source code
           docker build -t homepage-builder -f Dockerfile.alpine ${{ github.workspace }}/homepage
           docker create --name homepage-app homepage-builder
           rm -rf ${{ github.workspace }}/homepage
@@ -127,14 +122,14 @@ jobs:
         uses: ncipollo/release-action@v1
         with:
           tag: ${{ needs.Check-homepage-release.outputs.latest_release }}
-          name: homepage server ${{ needs.Check-homepage-release.outputs.latest_release }} 
+          name: homepage server ${{ needs.Check-homepage-release.outputs.latest_release }}  
           body: |
             This release contains the latest build of homepage server:
             - Version: **${{ needs.Check-homepage-release.outputs.latest_release }}**
             - Built on: **${{ needs.Build-homepage.outputs.timestamp }}**
             - Built for: Alpine Linux
 
-            **How to install**: 
+            **How to install**:  
             - Extract the server with `tar -xf homepage.tar.gz --no-same-owner`.
 
             **Release details**:  
