@@ -135,7 +135,7 @@ jobs:
         run: |
           echo "::notice file=README.md::New release detected: $LATEST_TAG. Updating repository variable."
           curl -X PATCH \
-          -H "Authorization: token ${{ secrets.GITHUB_PAT }}" \
+          -H "Authorization: token ${{ secrets.PAT }}" \
           -H "Accept: application/vnd.github.v3+json" \
           https://api.github.com/repos/${{ github.repository_owner }}/${{ github.repository }}/variables/LATEST_HOMEPAGE_RELEASE \
           -d '{"value":"'{{ needs.Check-homepage-release.outputs.latest_release }}'"}'
