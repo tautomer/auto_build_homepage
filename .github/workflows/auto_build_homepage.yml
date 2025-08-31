@@ -33,13 +33,6 @@ jobs:
           if [ "$LATEST_TAG" != "$PREV_TAG" ]; then
             echo "is_new_release=true" >> $GITHUB_ENV
             echo "is_new_release=true" >> $GITHUB_OUTPUT
-            # Update the repository variable
-            echo "::notice file=README.md::New release detected: $LATEST_TAG. Updating repository variable."
-            curl -X PATCH \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/${{ github.repository_owner }}/${{ github.repository }}/variables/LATEST_HOMEPAGE_RELEASE \
-            -d '{"value":"'$LATEST_TAG'"}'
           else
             echo "is_new_release=false" >> $GITHUB_ENV
             echo "is_new_release=false" >> $GITHUB_OUTPUT
@@ -138,3 +131,11 @@ jobs:
           prerelease: false
           artifacts: app-release/homepage.tar.gz
           token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Update the repository variable
+        run: |
+          echo "::notice file=README.md::New release detected: $LATEST_TAG. Updating repository variable."
+          curl -X PATCH \
+          -H "Authorization: token ${{ secrets.GITHUB_PAT }}" \
+          -H "Accept: application/vnd.github.v3+json" \
+          https://api.github.com/repos/${{ github.repository_owner }}/${{ github.repository }}/variables/LATEST_HOMEPAGE_RELEASE \
+          -d '{"value":"'{{ needs.Check-homepage-release.outputs.latest_release }}'"}'
