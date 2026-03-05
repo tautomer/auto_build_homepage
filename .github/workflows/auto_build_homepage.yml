@@ -45,6 +45,11 @@ jobs:
     if: needs.Check-homepage-release.outputs.is_new_release == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+        with:
+          path: builder
+
       - name: Download latest homepage release
         run: |
           curl -s https://api.github.com/repos/gethomepage/homepage/releases/latest \
@@ -53,32 +58,18 @@ jobs:
 
       - name: Extract homepage release
         run: |
-          tar --no-same-owner -xzf homepage.tar.gz --one-top-level --strip-components=1 -C .
+          mkdir -p src
+          tar --no-same-owner -xzf homepage.tar.gz -C src --strip-components=1
         
-      - name: Create Dockerfile.alpine
-        run: |
-          cat <<EOF > ${{ github.workspace }}/Dockerfile.alpine
-          # Start with the Alpine image
-          FROM node:22-alpine
-
-          # Install dependencies and build the app
-          WORKDIR /app
-          COPY . /app
-          RUN npm install -g pnpm
-          RUN pnpm install
-          RUN pnpm build
-
-          EOF
-
       - name: Build in Alpine Docker container
         run: |
-          docker build -t homepage-builder -f Dockerfile.alpine .
-          docker create --name homepage-app homepage-builder
-          rm -rf ${{ github.workspace }}/homepage
-          # We now copy the 'runner' workdir which is lean
-          docker cp homepage-app:/app ${{ github.workspace }}/homepage
-          docker rm homepage-app
-        working-directory: ${{ github.workspace }}
+          docker build -t homepage-builder -f builder/Dockerfile.alpine src
+          # Extract the result
+          docker create --name temp-build homepage-builder
+          mkdir -p homepage
+          docker cp temp-build:/app/.next/standalone/. ./homepage/
+          docker cp temp-build:/app/public/. ./homepage/public/
+          docker rm temp-build
 
       - name: Set up config symlink
         run: |
