@@ -67,8 +67,7 @@ jobs:
           # Extract the result
           docker create --name temp-build homepage-builder
           mkdir -p homepage
-          docker cp temp-build:/app/.next/standalone/. ./homepage/
-          docker cp temp-build:/app/public/. ./homepage/public/
+          docker cp temp-build:/app/. ./homepage/
           docker rm temp-build
 
       - name: Set up config symlink
