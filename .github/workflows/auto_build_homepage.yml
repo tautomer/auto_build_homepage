@@ -72,9 +72,10 @@ jobs:
 
       - name: Build in Alpine Docker container
         run: |
-          docker build -t homepage-builder -f Dockerfile.alpine ${{ github.workspace }}/homepage
+          docker build -t homepage-builder -f Dockerfile.alpine .
           docker create --name homepage-app homepage-builder
           rm -rf ${{ github.workspace }}/homepage
+          # We now copy the 'runner' workdir which is lean
           docker cp homepage-app:/app ${{ github.workspace }}/homepage
           docker rm homepage-app
         working-directory: ${{ github.workspace }}

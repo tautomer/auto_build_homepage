@@ -1,8 +1,19 @@
-# Dockerfile.alpine
-FROM node:22-alpine
+# Build
+FROM node:22-alpine AS builder
+WORKDIR /app
+RUN npm install -g pnpm
+COPY . .
+RUN pnpm install --frozen-lockfile
+# Force Next.js to build in standalone mode
+ENV NEXT_PRIVATE_STANDALONE=true 
+RUN pnpm build
+# Remove dev dependencies
+RUN pnpm prune --prod
 
-
- # Install dependencies and build the app
- RUN npm install -g pnpm
- RUN pnpm install
- RUN pnpm build
+# Clean up
+FROM node:22-alpine AS runner
+WORKDIR /app
+# Only copy the essential standalone build
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/public ./public
